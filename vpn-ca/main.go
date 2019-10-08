@@ -24,6 +24,12 @@ type caInfo struct {
 	caCert *x509.Certificate
 }
 
+//Used for signing certificates
+const (
+	serverSign = "server"
+	clientSign = "client"
+)
+
 func getCa(caDir string) *caInfo {
 	keyFile := filepath.Join(caDir, "ca.key")
 	certFile := filepath.Join(caDir, "ca.crt")
@@ -147,12 +153,18 @@ func getTemplate(commonName string, notAfter time.Time, keyUsage x509.KeyUsage, 
 	}
 }
 
-func sign(caInfo *caInfo, commonName string, tpl *x509.Certificate) *x509.Certificate {
-	key := generateKey(filepath.Join(caInfo.caDir, fmt.Sprintf("%s.key", commonName)))
+func sign(caInfo *caInfo, commonName string, tpl *x509.Certificate, signType string) *x509.Certificate {
+	absPath, _ := filepath.Abs(caInfo.caDir)
+	signPath := filepath.Join(filepath.Dir(absPath), signType)
+	if _, err := os.Stat(signPath); os.IsNotExist(err) {
+		os.Mkdir(signPath, os.ModePerm)
+	}
+
+	key := generateKey(filepath.Join(signPath, fmt.Sprintf("%s.key", commonName)))
 	der, err := x509.CreateCertificate(rand.Reader, tpl, caInfo.caCert, key.Public(), caInfo.caKey)
 	fatalIfErr(err, "unable to generate DER")
 
-	certFile := filepath.Join(caInfo.caDir, fmt.Sprintf("%s.crt", commonName))
+	certFile := filepath.Join(signPath, fmt.Sprintf("%s.crt", commonName))
 	writePem(certFile, der, "CERTIFICATE")
 
 	cert, err := x509.ParseCertificate(der)
@@ -162,7 +174,7 @@ func sign(caInfo *caInfo, commonName string, tpl *x509.Certificate) *x509.Certif
 }
 
 func main() {
-	var caDir = flag.String("ca-dir", ".", "the CA dir")
+	var currentDir = flag.String("ca-dir", ".", "the CA dir")
 	var caInit = flag.Bool("init", false, "initialize the CA")
 	var serverCommonName = flag.String("server", "", "generate a server certificate with provided CN")
 	var clientCommonName = flag.String("client", "", "generate a client certificate with provided CN")
@@ -173,8 +185,13 @@ func main() {
 	}
 	flag.Parse()
 
+	caDir := filepath.Join(*currentDir, "ca")
+
 	if *caInit {
-		initCa(*caDir)
+		if _, err := os.Stat(caDir); os.IsNotExist(err) {
+			os.Mkdir(caDir, os.ModePerm)
+		}
+		initCa(caDir)
 		return
 	}
 
@@ -185,11 +202,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	caInfo := getCa(*caDir)
+	caInfo := getCa(caDir)
 
 	if "" != *serverCommonName {
 		validateCommonName(*serverCommonName)
-		sign(caInfo, *serverCommonName, getServerTemplate(*serverCommonName, &caInfo.caCert.NotAfter))
+		sign(caInfo, *serverCommonName, getServerTemplate(*serverCommonName, &caInfo.caCert.NotAfter), serverSign)
 		return
 	}
 
@@ -204,7 +221,7 @@ func main() {
 			notAfterTime = p
 		}
 
-		sign(caInfo, *clientCommonName, getClientTemplate(*clientCommonName, &notAfterTime))
+		sign(caInfo, *clientCommonName, getClientTemplate(*clientCommonName, &notAfterTime), clientSign)
 		return
 	}
 }
