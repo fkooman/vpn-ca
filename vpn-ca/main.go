@@ -1,8 +1,9 @@
 package main
 
 import (
-	"crypto/ed25519"
+	"crypto"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -19,7 +20,7 @@ import (
 
 type caInfo struct {
 	caDir  string
-	caKey  ed25519.PrivateKey
+	caKey  crypto.Signer
 	caCert *x509.Certificate
 }
 
@@ -56,12 +57,12 @@ func writePem(pemFile string, derBytes []byte, pemType string) {
 	fatalIfErr(err, "unable to convert to PEM")
 }
 
-func readKey(pemFile string) ed25519.PrivateKey {
+func readKey(pemFile string) crypto.Signer {
 	derBytes := readPem(pemFile, "PRIVATE KEY")
-	privKey, err := x509.ParsePKCS8PrivateKey(derBytes)
+	signer, err := x509.ParsePKCS8PrivateKey(derBytes)
 	fatalIfErr(err, "unable to parse private key")
 
-	return privKey.(ed25519.PrivateKey)
+	return signer.(crypto.Signer)
 }
 
 func readCert(pemFile string) *x509.Certificate {
@@ -75,23 +76,23 @@ func readCert(pemFile string) *x509.Certificate {
 func initCa(caDir string) {
 	keyFile := filepath.Join(caDir, "ca.key")
 	certFile := filepath.Join(caDir, "ca.crt")
-	pubKey, privKey := generateKey(keyFile)
-	makeRootCert(pubKey, privKey, certFile)
+	key := generateKey(keyFile)
+	makeRootCert(key, certFile)
 }
 
-func generateKey(filename string) (ed25519.PublicKey, ed25519.PrivateKey) {
-	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+func generateKey(filename string) *rsa.PrivateKey {
+	key, err := rsa.GenerateKey(rand.Reader, 3072)
 	fatalIfErr(err, "unable to generate key")
-	der, err := x509.MarshalPKCS8PrivateKey(privKey)
+	der, err := x509.MarshalPKCS8PrivateKey(key)
 	fatalIfErr(err, "unable to convert key to DER")
 	writePem(filename, der, "PRIVATE KEY")
 
-	return pubKey, privKey
+	return key
 }
 
-func makeRootCert(pubKey ed25519.PublicKey, privKey ed25519.PrivateKey, filename string) (*x509.Certificate, error) {
+func makeRootCert(key crypto.Signer, filename string) (*x509.Certificate, error) {
 	tpl := getCaTemplate()
-	der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, pubKey, privKey)
+	der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, key.Public(), key)
 	fatalIfErr(err, "unable to generate DER")
 	writePem(filename, der, "CERTIFICATE")
 
@@ -147,8 +148,8 @@ func getTemplate(commonName string, notAfter time.Time, keyUsage x509.KeyUsage, 
 }
 
 func sign(caInfo *caInfo, commonName string, tpl *x509.Certificate) *x509.Certificate {
-	pubKey, _ := generateKey(filepath.Join(caInfo.caDir, fmt.Sprintf("%s.key", commonName)))
-	der, err := x509.CreateCertificate(rand.Reader, tpl, caInfo.caCert, pubKey, caInfo.caKey)
+	key := generateKey(filepath.Join(caInfo.caDir, fmt.Sprintf("%s.key", commonName)))
+	der, err := x509.CreateCertificate(rand.Reader, tpl, caInfo.caCert, key.Public(), caInfo.caKey)
 	fatalIfErr(err, "unable to generate DER")
 
 	certFile := filepath.Join(caInfo.caDir, fmt.Sprintf("%s.crt", commonName))
