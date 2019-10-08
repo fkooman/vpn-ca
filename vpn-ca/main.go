@@ -19,7 +19,6 @@ import (
 )
 
 type caInfo struct {
-	caDir  string
 	caKey  crypto.Signer
 	caCert *x509.Certificate
 }
@@ -30,7 +29,7 @@ func getCa(caDir string) *caInfo {
 	key := readKey(keyFile)
 	cert := readCert(certFile)
 
-	return &caInfo{caDir, key, cert}
+	return &caInfo{key, cert}
 }
 
 func readPem(pemFile, pemType string) []byte {
@@ -147,12 +146,16 @@ func getTemplate(commonName string, notAfter time.Time, keyUsage x509.KeyUsage, 
 	}
 }
 
-func sign(caInfo *caInfo, commonName string, tpl *x509.Certificate) *x509.Certificate {
-	key := generateKey(filepath.Join(caInfo.caDir, fmt.Sprintf("%s.key", commonName)))
+func sign(caInfo *caInfo, commonName string, tpl *x509.Certificate, targetPath string) *x509.Certificate {
+	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
+		os.Mkdir(targetPath, 0644)
+	}
+
+	key := generateKey(filepath.Join(targetPath, fmt.Sprintf("%s.key", commonName)))
 	der, err := x509.CreateCertificate(rand.Reader, tpl, caInfo.caCert, key.Public(), caInfo.caKey)
 	fatalIfErr(err, "unable to generate DER")
 
-	certFile := filepath.Join(caInfo.caDir, fmt.Sprintf("%s.crt", commonName))
+	certFile := filepath.Join(targetPath, fmt.Sprintf("%s.crt", commonName))
 	writePem(certFile, der, "CERTIFICATE")
 
 	cert, err := x509.ParseCertificate(der)
@@ -189,7 +192,8 @@ func main() {
 
 	if "" != *serverCommonName {
 		validateCommonName(*serverCommonName)
-		sign(caInfo, *serverCommonName, getServerTemplate(*serverCommonName, &caInfo.caCert.NotAfter))
+		targetPath := filepath.Join(*caDir, "server")
+		sign(caInfo, *serverCommonName, getServerTemplate(*serverCommonName, &caInfo.caCert.NotAfter), targetPath)
 		return
 	}
 
@@ -204,7 +208,8 @@ func main() {
 			notAfterTime = p
 		}
 
-		sign(caInfo, *clientCommonName, getClientTemplate(*clientCommonName, &notAfterTime))
+		targetPath := filepath.Join(*caDir, "client")
+		sign(caInfo, *clientCommonName, getClientTemplate(*clientCommonName, &notAfterTime), targetPath)
 		return
 	}
 }
