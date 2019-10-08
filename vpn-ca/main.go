@@ -146,16 +146,16 @@ func getTemplate(commonName string, notAfter time.Time, keyUsage x509.KeyUsage, 
 	}
 }
 
-func sign(caInfo *caInfo, commonName string, tpl *x509.Certificate, targetPath string) *x509.Certificate {
-	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
-		os.Mkdir(targetPath, 0644)
+func sign(caInfo *caInfo, commonName string, tpl *x509.Certificate, targetDir string) *x509.Certificate {
+	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
+		os.Mkdir(targetDir, 0644)
 	}
 
-	key := generateKey(filepath.Join(targetPath, fmt.Sprintf("%s.key", commonName)))
+	key := generateKey(filepath.Join(targetDir, fmt.Sprintf("%s.key", commonName)))
 	der, err := x509.CreateCertificate(rand.Reader, tpl, caInfo.caCert, key.Public(), caInfo.caKey)
 	fatalIfErr(err, "unable to generate DER")
 
-	certFile := filepath.Join(targetPath, fmt.Sprintf("%s.crt", commonName))
+	certFile := filepath.Join(targetDir, fmt.Sprintf("%s.crt", commonName))
 	writePem(certFile, der, "CERTIFICATE")
 
 	cert, err := x509.ParseCertificate(der)
@@ -192,8 +192,8 @@ func main() {
 
 	if "" != *serverCommonName {
 		validateCommonName(*serverCommonName)
-		targetPath := filepath.Join(*caDir, "server")
-		sign(caInfo, *serverCommonName, getServerTemplate(*serverCommonName, &caInfo.caCert.NotAfter), targetPath)
+		targetDir := filepath.Join(*caDir, "server")
+		sign(caInfo, *serverCommonName, getServerTemplate(*serverCommonName, &caInfo.caCert.NotAfter), targetDir)
 		return
 	}
 
@@ -208,8 +208,8 @@ func main() {
 			notAfterTime = p
 		}
 
-		targetPath := filepath.Join(*caDir, "client")
-		sign(caInfo, *clientCommonName, getClientTemplate(*clientCommonName, &notAfterTime), targetPath)
+		targetDir := filepath.Join(*caDir, "client")
+		sign(caInfo, *clientCommonName, getClientTemplate(*clientCommonName, &notAfterTime), targetDir)
 		return
 	}
 }
