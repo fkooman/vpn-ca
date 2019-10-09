@@ -148,7 +148,7 @@ func getTemplate(commonName string, notAfter time.Time, keyUsage x509.KeyUsage, 
 
 func sign(caInfo *caInfo, commonName string, tpl *x509.Certificate, targetDir string) *x509.Certificate {
 	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
-		os.Mkdir(targetDir, 0644)
+		os.Mkdir(targetDir, 0700)
 	}
 
 	key := generateKey(filepath.Join(targetDir, fmt.Sprintf("%s.key", commonName)))
