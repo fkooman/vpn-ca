@@ -1,4 +1,4 @@
-# TODO
+# DONE
 
 - switch to PKCS#8 for private key encoding (`PRIVATE KEY` instead of 
   `RSA PRIVATE KEY`)
